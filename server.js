@@ -7,8 +7,8 @@ const { exec } = require('child_process');
 const app = express();
 app.use(express.json());
 
-// Simple Bearer Token Authentication
-const AUTH_TOKEN = process.env.AUTH_TOKEN || 'CHANGE_ME_TOKEN';
+// Simple Bearer Token
+const AUTH_TOKEN = process.env.AUTH_TOKEN || 'mcp_9Kx7pL$mQv2!zR8nT4wY6uE3iO5pA';
 
 function authenticate(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -25,12 +25,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: 'run_terminal_command',
-        description: 'Run any shell command on the server (curl, pip install, python, etc). Full terminal access.',
+        description: 'Run any shell command on the server. Full terminal access.',
         inputSchema: {
           type: 'object',
           properties: {
-            command: { type: 'string', description: 'Shell command to run' },
-            timeout: { type: 'number', description: 'Timeout in ms (default 120000)' }
+            command: { type: 'string' },
+            timeout: { type: 'number' }
           },
           required: ['command']
         }
@@ -49,17 +49,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return new Promise((resolve) => {
       exec(command, { timeout }, (error, stdout, stderr) => {
         let output = '';
-        if (stdout) output += `STDOUT:\n${stdout}\n`;
-        if (stderr) output += `STDERR:\n${stderr}\n`;
-        if (error) output += `ERROR: ${error.message}\n`;
-        resolve({ content: [{ type: 'text', text: output || 'Command executed.' }] });
+        if (stdout) output += stdout;
+        if (stderr) output += stderr;
+        if (error) output += `Error: ${error.message}`;
+        resolve({ content: [{ type: 'text', text: output || 'Command executed successfully.' }] });
       });
     });
   }
   return { content: [{ type: 'text', text: 'Unknown tool' }] };
 });
 
-// Protected SSE endpoint
+// OAuth Protected Resource Metadata (helps Grok connect)
+app.get('/.well-known/oauth-protected-resource', (req, res) => {
+  res.json({
+    resource: `https://${req.get('host')}`,
+    authorization_servers: [`https://${req.get('host')}`]
+  });
+});
+
+// SSE endpoint with auth
 app.get('/sse', authenticate, async (req, res) => {
   const transport = new SSEServerTransport('/messages', res);
   await server.connect(transport);
