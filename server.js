@@ -7,26 +7,30 @@ const { exec } = require('child_process');
 const app = express();
 app.use(express.json());
 
+// Simple Bearer Token Authentication
+const AUTH_TOKEN = process.env.AUTH_TOKEN || 'CHANGE_ME_TOKEN';
+
+function authenticate(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader || authHeader !== `Bearer ${AUTH_TOKEN}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
 const server = new Server({ name: 'terminal-server', version: '1.0.0' }, { capabilities: { tools: {} } });
 
-// List available tools
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
         name: 'run_terminal_command',
-        description: 'Run any shell command on the server. Use this for checking dependencies, installing packages, running curl, python commands, etc. Be careful with destructive commands.',
+        description: 'Run any shell command on the server (curl, pip install, python, etc). Full terminal access.',
         inputSchema: {
           type: 'object',
           properties: {
-            command: {
-              type: 'string',
-              description: 'The shell command to execute (e.g. "pip list", "curl https://example.com", "python -m pip install requests")'
-            },
-            timeout: {
-              type: 'number',
-              description: 'Timeout in milliseconds (default 120000 = 2 minutes)'
-            }
+            command: { type: 'string', description: 'Shell command to run' },
+            timeout: { type: 'number', description: 'Timeout in ms (default 120000)' }
           },
           required: ['command']
         }
@@ -35,43 +39,33 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
-// Execute terminal command
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
-
   if (name === 'run_terminal_command') {
     const command = args?.command;
     const timeout = args?.timeout || 120000;
-
-    if (!command) {
-      return { content: [{ type: 'text', text: 'Error: No command provided' }] };
-    }
+    if (!command) return { content: [{ type: 'text', text: 'Error: No command provided' }] };
 
     return new Promise((resolve) => {
       exec(command, { timeout }, (error, stdout, stderr) => {
         let output = '';
-
         if (stdout) output += `STDOUT:\n${stdout}\n`;
         if (stderr) output += `STDERR:\n${stderr}\n`;
         if (error) output += `ERROR: ${error.message}\n`;
-
-        if (!output) output = 'Command executed with no output.';
-
-        resolve({ content: [{ type: 'text', text: output }] });
+        resolve({ content: [{ type: 'text', text: output || 'Command executed.' }] });
       });
     });
   }
-
   return { content: [{ type: 'text', text: 'Unknown tool' }] };
 });
 
-// SSE endpoint
-app.get('/sse', async (req, res) => {
+// Protected SSE endpoint
+app.get('/sse', authenticate, async (req, res) => {
   const transport = new SSEServerTransport('/messages', res);
   await server.connect(transport);
 });
 
-app.post('/messages', express.json(), (req, res) => res.sendStatus(200));
+app.post('/messages', authenticate, express.json(), (req, res) => res.sendStatus(200));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Terminal MCP Server running on port ${PORT}`));
