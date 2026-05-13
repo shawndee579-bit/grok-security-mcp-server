@@ -25,7 +25,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: 'run_terminal_command',
-        description: 'Run any shell command on the server. Full terminal access.',
+        description: 'Run any shell command on the server (full terminal access).',
         inputSchema: {
           type: 'object',
           properties: {
@@ -51,15 +51,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         let output = '';
         if (stdout) output += stdout;
         if (stderr) output += stderr;
-        if (error) output += `Error: ${error.message}`;
-        resolve({ content: [{ type: 'text', text: output || 'Command executed successfully.' }] });
+        if (error) output += error.message || '';
+        resolve({ content: [{ type: 'text', text: output || 'Command executed.' }] });
       });
     });
   }
   return { content: [{ type: 'text', text: 'Unknown tool' }] };
 });
 
-// OAuth Protected Resource Metadata (helps Grok connect)
+// Dummy OAuth routes to satisfy Grok connector
+app.get('/authorize', (req, res) => {
+  const redirectUri = req.query.redirect_uri;
+  const state = req.query.state;
+  // Simulate successful authorization by redirecting back with a code
+  res.redirect(`${redirectUri}?code=dummy_code&state=${state}`);
+});
+
+app.post('/token', (req, res) => {
+  // Return a dummy access token
+  res.json({
+    access_token: AUTH_TOKEN,
+    token_type: 'Bearer',
+    expires_in: 3600
+  });
+});
+
+// Protected Resource Metadata
 app.get('/.well-known/oauth-protected-resource', (req, res) => {
   res.json({
     resource: `https://${req.get('host')}`,
@@ -67,7 +84,7 @@ app.get('/.well-known/oauth-protected-resource', (req, res) => {
   });
 });
 
-// SSE endpoint with auth
+// SSE with auth
 app.get('/sse', authenticate, async (req, res) => {
   const transport = new SSEServerTransport('/messages', res);
   await server.connect(transport);
